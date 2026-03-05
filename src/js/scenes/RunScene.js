@@ -2,15 +2,18 @@
 import { input } from "../core/input.js";
 import { createPlayer } from "../entities/Player.js";
 import { Vec2 } from "../utils/Vec2.js";
+import { BulletSystem } from "../systems/BulletSystem.js";
 
 export class RunScene {
   constructor() {
     this.player = createPlayer(450, 300);
+    this.bullets = new BulletSystem();
   }
 
   update(dt, canvas) {
+    
     const p = this.player;
-
+    
     // 1) Build input direction vector
     const dir = new Vec2(0, 0);
     if (input.isDown("KeyW")) dir.y -= 1;
@@ -46,6 +49,16 @@ export class RunScene {
 
     if (p.pos.x !== oldX) p.vel.x = 0;
     if (p.pos.y !== oldY) p.vel.y = 0;
+
+    // Aim: point toward mouse
+    const dx = input.mouse.x - p.pos.x;
+    const dy = input.mouse.y - p.pos.y;
+    p.aimAngle = Math.atan2(dy, dx);
+
+    // Bullets: cooldown + firing + simulation
+    this.bullets.tickCooldown(p, dt);
+    this.bullets.tryShoot(p, input.mouse.down);
+    this.bullets.update(dt, canvas);
   }
 
   render(ctx, canvas) {
@@ -55,10 +68,25 @@ export class RunScene {
     ctx.fillStyle = "#111";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    // Bullets
+    this.bullets.render(ctx);
+
     // Player
     const p = this.player;
     ctx.fillStyle = "red";
     ctx.fillRect(p.pos.x - p.size / 2, p.pos.y - p.size / 2, p.size, p.size);
+
+    // Aim line (direction indicator)
+    const aimLen = p.size * 1.2;
+    const ax = p.pos.x + Math.cos(p.aimAngle) * aimLen;
+    const ay = p.pos.y + Math.sin(p.aimAngle) * aimLen;
+
+    ctx.strokeStyle = "yellow";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(p.pos.x, p.pos.y);
+    ctx.lineTo(ax, ay);
+    ctx.stroke();
 
     // Debug: mouse dot
     ctx.fillStyle = "white";
