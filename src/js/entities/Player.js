@@ -1,6 +1,7 @@
-const player = {
-    x: 0,
-    y: 0,
-    vx: 0,
-    vy: 0,
+export const player = {
+    x: 450,
+    y: 300,
+    size: 24,
+    vx: 260,
+    vy: 260,
 };

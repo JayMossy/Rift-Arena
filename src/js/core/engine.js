@@ -15,12 +15,12 @@ export function startEngine({ canvasId = "game", scene }) {
 
   initInput(canvas);
 
-  let last = performance.now();
+  let lastTime = performance.now();
 
-  function frame(now) {
+  function frame(currentTime) {
     // dt in seconds
-    let dt = (now - last) / 1000;
-    last = now;
+    let dt = (currentTime - lastTime) / 1000;
+    lastTime = currentTime;
 
     // Clamp dt to avoid giant physics jumps when tab is unfocused
     if (dt > 0.05) dt = 0.05;

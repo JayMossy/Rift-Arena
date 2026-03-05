@@ -1,18 +1,11 @@
 // src/js/scenes/RunScene.js
 import { input } from "../core/input.js";
+import { player } from "../entities/Player.js";
 
 export class RunScene {
-  constructor() {
-    this.player = {
-      x: 450,
-      y: 300,
-      size: 24,
-      speed: 260
-    };
-  }
 
   update(dt, canvas) {
-    const p = this.player;
+    const p = player;
 
     let mx = 0;
     let my = 0;
@@ -35,7 +28,6 @@ export class RunScene {
     const half = p.size / 2;
     p.x = Math.max(half, Math.min(canvas.width - half, p.x));
     p.y = Math.max(half, Math.min(canvas.height - half, p.y));
-    console.log("updating");
   }
 
   render(ctx, canvas) {
@@ -46,7 +38,7 @@ export class RunScene {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // player
-    const p = this.player;
+    const p = player;
     ctx.fillStyle = "lime";
     ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
     

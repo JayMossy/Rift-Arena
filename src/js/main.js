@@ -1,4 +1,4 @@
-// src/js/main.js
+// Creates the scene and starts the game
 import { startEngine } from "./core/engine.js";
 import { RunScene } from "./scenes/RunScene.js";
 

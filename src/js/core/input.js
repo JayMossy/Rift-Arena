@@ -1,4 +1,4 @@
-// src/js/core/input.js
+// Keyboard / Mouse Input
 export const input = {
   keys: Object.create(null),
   mouse: { x: 0, y: 0, down: false },
