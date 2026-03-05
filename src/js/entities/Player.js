@@ -6,7 +6,7 @@ export function createPlayer(x, y) {
         vel: new Vec2(0, 0),
         size: 20,
         accel: 1000,
-        drag: 0.8,
+        drag: 1.2,
         maxSpeed: 300,
         aimAngle: 0
     };
