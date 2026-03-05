@@ -68,4 +68,8 @@ export class BulletSystem {
       ctx.fill();
     }
   }
+
+  consumeBulletAt(index) {
+    this.bullets.splice(index, 1);
+    }
 }
