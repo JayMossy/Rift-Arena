@@ -8,7 +8,10 @@ export function createPlayer(x, y) {
         accel: 1000,
         drag: 0.8,
         maxSpeed: 300,
-        aimAngle: 0
+        aimAngle: 0,
+        fireRate: 10,      // bullets per second
+        bulletSpeed: 650,  // pixels/sec
+        cooldown: 0        // internal timer
     };
 }
 
