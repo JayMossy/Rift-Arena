@@ -3,11 +3,15 @@ import { input } from "../core/input.js";
 import { createPlayer } from "../entities/Player.js";
 import { Vec2 } from "../utils/Vec2.js";
 import { BulletSystem } from "../systems/BulletSystem.js";
+import { EnemySystem } from "../systems/EnemySystem.js";
+import { circlesOverlap } from "../utils/collision.js";
 
 export class RunScene {
   constructor() {
     this.player = createPlayer(450, 300);
     this.bullets = new BulletSystem();
+    this.enemies = new EnemySystem();
+    this.spawnTimer = 0;
   }
 
   update(dt, canvas) {
@@ -55,10 +59,71 @@ export class RunScene {
     const dy = input.mouse.y - p.pos.y;
     p.aimAngle = Math.atan2(dy, dx);
 
+    // Spawn a seeker every 2 seconds (temporary test)
+    this.spawnTimer -= dt;
+    if (this.spawnTimer <= 0) {
+      this.spawnTimer = 2;
+
+      // spawn at a random edge so it feels like an arena wave
+      const side = Math.floor(Math.random() * 4);
+      const margin = 20;
+
+      let x, y;
+      if (side === 0) { x = margin; y = Math.random() * canvas.height; }                 // left
+      else if (side === 1) { x = canvas.width - margin; y = Math.random() * canvas.height; } // right
+      else if (side === 2) { x = Math.random() * canvas.width; y = margin; }            // top
+      else { x = Math.random() * canvas.width; y = canvas.height - margin; }            // bottom
+
+      this.enemies.spawn("seeker", x, y);
+    }
+
+    // Update enemies (seeking player)
+    this.enemies.update(dt, this.player, canvas);
+
+
     // Bullets: cooldown + firing + simulation
     this.bullets.tickCooldown(p, dt);
     this.bullets.tryShoot(p, input.mouse.down);
     this.bullets.update(dt, canvas);
+
+
+    // Bullet -> Enemy collisions
+    const bullets = this.bullets.bullets;
+    const enemies = this.enemies.enemies;
+
+    for (let bi = bullets.length - 1; bi >= 0; bi--) {
+      const b = bullets[bi];
+      let hit = false;
+
+      for (let ei = enemies.length - 1; ei >= 0; ei--) {
+        const e = enemies[ei];
+
+        if (circlesOverlap(b.pos.x, b.pos.y, b.radius, e.pos.x, e.pos.y, e.radius)) {
+          // damage enemy
+          this.enemies.takeDamage(e, 1);
+
+          // consume bullet (no piercing yet)
+          this.bullets.consumeBulletAt(bi);
+
+          hit = true;
+          break;
+        }
+      }
+
+      if (hit) continue;
+    }
+
+    // Enemy -> Player collision (temporary: reset player to center)
+    for (const e of this.enemies.enemies) {
+      if (circlesOverlap(p.pos.x, p.pos.y, p.size / 2, e.pos.x, e.pos.y, e.radius)) {
+        // Temporary response: reset player position & stop motion
+        p.pos.x = canvas.width / 2;
+        p.pos.y = canvas.height / 2;
+        p.vel.x = 0;
+        p.vel.y = 0;
+        break;
+      }
+    }
   }
 
   render(ctx, canvas) {
@@ -67,6 +132,9 @@ export class RunScene {
     // Background
     ctx.fillStyle = "#111";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Enemies
+    this.enemies.render(ctx);
 
     // Bullets
     this.bullets.render(ctx);
@@ -87,7 +155,7 @@ export class RunScene {
     ctx.moveTo(p.pos.x, p.pos.y);
     ctx.lineTo(ax, ay);
     ctx.stroke();
-
+    
     // Debug: mouse dot
     ctx.fillStyle = "white";
     ctx.fillRect(input.mouse.x - 2, input.mouse.y - 2, 4, 4);
