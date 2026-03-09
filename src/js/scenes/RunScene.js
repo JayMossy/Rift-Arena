@@ -11,40 +11,48 @@ export class RunScene {
     this.player = createPlayer(450, 300);
     this.bullets = new BulletSystem();
     this.enemies = new EnemySystem();
+
+    // Room state
+    this.roomNumber = 1;
+    this.enemiesToSpawn = this.roomNumber * 4;
+    this.enemiesSpawned = 0;
     this.spawnTimer = 0;
+    this.spawnInterval = 2;
+
+    this.roomClear = false;
+    this.roomClearDelay = 2;
+    this.roomClearTimer = 0;
   }
 
   update(dt, canvas) {
-    
     const p = this.player;
-    
-    // 1) Build input direction vector
+
+    // -----------------------------
+    // Player movement
+    // -----------------------------
     const dir = new Vec2(0, 0);
     if (input.isDown("KeyW")) dir.y -= 1;
     if (input.isDown("KeyS")) dir.y += 1;
     if (input.isDown("KeyA")) dir.x -= 1;
     if (input.isDown("KeyD")) dir.x += 1;
 
-    // 2) Normalize so diagonals aren't faster
     dir.normalize();
 
-    // 3) Acceleration -> velocity
-    // vel += dir * accel * dt
+    // Acceleration -> velocity
     p.vel.add(dir.scale(p.accel * dt));
 
-    // 4) Drag (damping) on velocity
+    // Drag / damping
     const damp = Math.max(0, 1 - p.drag * dt);
     p.vel.scale(damp);
 
-    // 5) Clamp velocity to max speed
+    // Clamp max speed
     p.vel.clampLen(p.maxSpeed);
 
-    // 6) Integrate position using velocity
+    // Integrate position
     p.pos.add(p.vel.clone().scale(dt));
 
-    // 7) Clamp to canvas bounds + zero velocity on axis collision
+    // Clamp player to arena bounds
     const half = p.size / 2;
-
     const oldX = p.pos.x;
     const oldY = p.pos.y;
 
@@ -54,40 +62,63 @@ export class RunScene {
     if (p.pos.x !== oldX) p.vel.x = 0;
     if (p.pos.y !== oldY) p.vel.y = 0;
 
-    // Aim: point toward mouse
+    // -----------------------------
+    // Aim
+    // -----------------------------
     const dx = input.mouse.x - p.pos.x;
     const dy = input.mouse.y - p.pos.y;
     p.aimAngle = Math.atan2(dy, dx);
 
-    // Spawn a seeker every 2 seconds (temporary test)
-    this.spawnTimer -= dt;
-    if (this.spawnTimer <= 0) {
-      this.spawnTimer = 2;
+    // -----------------------------
+    // Room spawning logic
+    // -----------------------------
+    if (!this.roomClear) {
+      this.spawnTimer -= dt;
 
-      // spawn at a random edge so it feels like an arena wave
-      const side = Math.floor(Math.random() * 4);
-      const margin = 20;
+      if (
+        this.spawnTimer <= 0 &&
+        this.enemiesSpawned < this.enemiesToSpawn
+      ) {
+        this.spawnTimer = this.spawnInterval;
 
-      let x, y;
-      if (side === 0) { x = margin; y = Math.random() * canvas.height; }                 // left
-      else if (side === 1) { x = canvas.width - margin; y = Math.random() * canvas.height; } // right
-      else if (side === 2) { x = Math.random() * canvas.width; y = margin; }            // top
-      else { x = Math.random() * canvas.width; y = canvas.height - margin; }            // bottom
+        const side = Math.floor(Math.random() * 4);
+        const margin = 20;
 
-      this.enemies.spawn("seeker", x, y);
+        let x, y;
+        if (side === 0) {
+          x = margin;
+          y = Math.random() * canvas.height;
+        } else if (side === 1) {
+          x = canvas.width - margin;
+          y = Math.random() * canvas.height;
+        } else if (side === 2) {
+          x = Math.random() * canvas.width;
+          y = margin;
+        } else {
+          x = Math.random() * canvas.width;
+          y = canvas.height - margin;
+        }
+
+        this.enemies.spawn("seeker", x, y);
+        this.enemiesSpawned++;
+      }
     }
 
-    // Update enemies (seeking player)
-    this.enemies.update(dt, this.player, canvas);
+    // -----------------------------
+    // Update enemies
+    // -----------------------------
+    this.enemies.update(dt, p, canvas);
 
-
-    // Bullets: cooldown + firing + simulation
+    // -----------------------------
+    // Bullets
+    // -----------------------------
     this.bullets.tickCooldown(p, dt);
     this.bullets.tryShoot(p, input.mouse.down);
     this.bullets.update(dt, canvas);
 
-
+    // -----------------------------
     // Bullet -> Enemy collisions
+    // -----------------------------
     const bullets = this.bullets.bullets;
     const enemies = this.enemies.enemies;
 
@@ -98,13 +129,14 @@ export class RunScene {
       for (let ei = enemies.length - 1; ei >= 0; ei--) {
         const e = enemies[ei];
 
-        if (circlesOverlap(b.pos.x, b.pos.y, b.radius, e.pos.x, e.pos.y, e.radius)) {
-          // damage enemy
+        if (
+          circlesOverlap(
+            b.pos.x, b.pos.y, b.radius,
+            e.pos.x, e.pos.y, e.radius
+          )
+        ) {
           this.enemies.takeDamage(e, 1);
-
-          // consume bullet (no piercing yet)
           this.bullets.consumeBulletAt(bi);
-
           hit = true;
           break;
         }
@@ -113,15 +145,52 @@ export class RunScene {
       if (hit) continue;
     }
 
-    // Enemy -> Player collision (temporary: reset player to center)
+    // -----------------------------
+    // Enemy -> Player collisions
+    // Temporary response: reset player
+    // -----------------------------
     for (const e of this.enemies.enemies) {
-      if (circlesOverlap(p.pos.x, p.pos.y, p.size / 2, e.pos.x, e.pos.y, e.radius)) {
-        // Temporary response: reset player position & stop motion
+      if (
+        circlesOverlap(
+          p.pos.x, p.pos.y, p.size / 2,
+          e.pos.x, e.pos.y, e.radius
+        )
+      ) {
         p.pos.x = canvas.width / 2;
         p.pos.y = canvas.height / 2;
         p.vel.x = 0;
         p.vel.y = 0;
         break;
+      }
+    }
+
+    // -----------------------------
+    // Room clear detection
+    // Room clears only when:
+    // 1) all enemies have been spawned
+    // 2) all enemies are dead
+    // -----------------------------
+    if (
+      !this.roomClear &&
+      this.enemiesSpawned >= this.enemiesToSpawn &&
+      this.enemies.enemies.length === 0
+    ) {
+      this.roomClear = true;
+      this.roomClearTimer = this.roomClearDelay;
+    }
+
+    // -----------------------------
+    // Room transition countdown
+    // -----------------------------
+    if (this.roomClear) {
+      this.roomClearTimer -= dt;
+
+      if (this.roomClearTimer <= 0) {
+        this.roomNumber++;
+        this.enemiesToSpawn = this.roomNumber * 4;
+        this.enemiesSpawned = 0;
+        this.roomClear = false;
+        this.spawnTimer = 0;
       }
     }
   }
@@ -142,9 +211,14 @@ export class RunScene {
     // Player
     const p = this.player;
     ctx.fillStyle = "red";
-    ctx.fillRect(p.pos.x - p.size / 2, p.pos.y - p.size / 2, p.size, p.size);
+    ctx.fillRect(
+      p.pos.x - p.size / 2,
+      p.pos.y - p.size / 2,
+      p.size,
+      p.size
+    );
 
-    // Aim line (direction indicator)
+    // Aim line
     const aimLen = p.size * 1.2;
     const ax = p.pos.x + Math.cos(p.aimAngle) * aimLen;
     const ay = p.pos.y + Math.sin(p.aimAngle) * aimLen;
@@ -155,9 +229,24 @@ export class RunScene {
     ctx.moveTo(p.pos.x, p.pos.y);
     ctx.lineTo(ax, ay);
     ctx.stroke();
-    
+
     // Debug: mouse dot
     ctx.fillStyle = "white";
     ctx.fillRect(input.mouse.x - 2, input.mouse.y - 2, 4, 4);
+
+    // -----------------------------
+    // UI / Room debug text
+    // -----------------------------
+    ctx.fillStyle = "white";
+    ctx.font = "20px Arial";
+    ctx.fillText(`Room: ${this.roomNumber}`, 20, 30);
+    ctx.fillText(`To Spawn: ${this.enemiesToSpawn - this.enemiesSpawned}`, 20, 55);
+    ctx.fillText(`Alive: ${this.enemies.enemies.length}`, 20, 80);
+
+    if (this.roomClear) {
+      ctx.fillStyle = "lime";
+      ctx.font = "28px Arial";
+      ctx.fillText("ROOM CLEAR", canvas.width / 2 - 95, 40);
+    }
   }
 }

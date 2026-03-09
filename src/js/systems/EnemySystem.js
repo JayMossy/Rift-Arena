@@ -7,7 +7,7 @@ export class EnemySystem {
 
     // Templates (stats only). No position here.
     this.enemyDefs = {
-      seeker: { radius: 15, speed: 140, hp: 3 }
+      seeker: { radius: 13, speed: 140, hp: 3 }
     };
   }
 
