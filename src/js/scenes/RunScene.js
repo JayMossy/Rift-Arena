@@ -6,52 +6,103 @@ import { BulletSystem } from "../systems/BulletSystem.js";
 import { EnemySystem } from "../systems/EnemySystem.js";
 import { circlesOverlap } from "../utils/collision.js";
 
+/**
+ * RunScene is the active gameplay scene.
+ *
+ * Responsibilities:
+ * - player movement and aiming
+ * - bullet updates
+ * - enemy updates
+ * - room loop / spawning state
+ * - combat collisions
+ * - render gameplay + HUD
+ *
+ * Why keep this scene fairly explicit right now?
+ * - You are still learning core game loop structure
+ * - Explicit flow is easier to debug and reason about
+ * - We can split more into systems later once the loop is stable
+ */
 export class RunScene {
   constructor() {
+    // Core entities / systems
     this.player = createPlayer(450, 300);
     this.bullets = new BulletSystem();
     this.enemies = new EnemySystem();
 
+    // -----------------------------
     // Room state
+    // -----------------------------
     this.roomNumber = 1;
+
+    // Total enemies this room should spawn before the room can be cleared.
     this.enemiesToSpawn = this.roomNumber * 4;
+
+    // Count of how many enemies have actually been spawned so far this room.
     this.enemiesSpawned = 0;
+
+    // Spawn timing
     this.spawnTimer = 0;
     this.spawnInterval = 2;
 
+    // Room clear / transition timing
     this.roomClear = false;
     this.roomClearDelay = 2;
     this.roomClearTimer = 0;
   }
 
+  /**
+   * Main per-frame update.
+   *
+   * @param {number} dt - Delta time in seconds.
+   * Important: dt should already be clamped by the engine to avoid giant jumps.
+   *
+   * @param {HTMLCanvasElement} canvas - Used for bounds and spawn positioning
+   */
   update(dt, canvas) {
     const p = this.player;
 
     // -----------------------------
-    // Player movement
+    // Player timers
+    // -----------------------------
+    if (p.invulnTime > 0) {
+      p.invulnTime -= dt;
+      if (p.invulnTime < 0) {
+        p.invulnTime = 0;
+      }
+    }
+
+    // -----------------------------
+    // Player movement input
     // -----------------------------
     const dir = new Vec2(0, 0);
+
     if (input.isDown("KeyW")) dir.y -= 1;
     if (input.isDown("KeyS")) dir.y += 1;
     if (input.isDown("KeyA")) dir.x -= 1;
     if (input.isDown("KeyD")) dir.x += 1;
 
+    // Normalize so diagonals are not faster than straight movement.
     dir.normalize();
 
-    // Acceleration -> velocity
+    // -----------------------------
+    // Player physics
+    // -----------------------------
+    // Acceleration feeds into velocity
     p.vel.add(dir.scale(p.accel * dt));
 
-    // Drag / damping
+    // Damping / drag reduces velocity over time.
+    // Important:
+    // This formula assumes drag values tuned for a dt-scaled damping model.
     const damp = Math.max(0, 1 - p.drag * dt);
     p.vel.scale(damp);
 
-    // Clamp max speed
+    // Enforce max movement speed
     p.vel.clampLen(p.maxSpeed);
 
-    // Integrate position
+    // Position integrates from velocity
     p.pos.add(p.vel.clone().scale(dt));
 
-    // Clamp player to arena bounds
+    // Arena bounds + velocity cancellation on collision axis
     const half = p.size / 2;
     const oldX = p.pos.x;
     const oldY = p.pos.y;
@@ -65,13 +116,15 @@ export class RunScene {
     // -----------------------------
     // Aim
     // -----------------------------
+    // atan2 handles all quadrants correctly.
     const dx = input.mouse.x - p.pos.x;
     const dy = input.mouse.y - p.pos.y;
     p.aimAngle = Math.atan2(dy, dx);
 
     // -----------------------------
-    // Room spawning logic
+    // Room spawning
     // -----------------------------
+    // Only spawn while the room is active.
     if (!this.roomClear) {
       this.spawnTimer -= dt;
 
@@ -81,10 +134,12 @@ export class RunScene {
       ) {
         this.spawnTimer = this.spawnInterval;
 
+        // Spawn at a random edge of the arena.
         const side = Math.floor(Math.random() * 4);
         const margin = 20;
 
         let x, y;
+
         if (side === 0) {
           x = margin;
           y = Math.random() * canvas.height;
@@ -105,13 +160,10 @@ export class RunScene {
     }
 
     // -----------------------------
-    // Update enemies
+    // Systems update
     // -----------------------------
     this.enemies.update(dt, p, canvas);
 
-    // -----------------------------
-    // Bullets
-    // -----------------------------
     this.bullets.tickCooldown(p, dt);
     this.bullets.tryShoot(p, input.mouse.down);
     this.bullets.update(dt, canvas);
@@ -131,12 +183,17 @@ export class RunScene {
 
         if (
           circlesOverlap(
-            b.pos.x, b.pos.y, b.radius,
-            e.pos.x, e.pos.y, e.radius
+            b.pos.x,
+            b.pos.y,
+            b.radius,
+            e.pos.x,
+            e.pos.y,
+            e.radius
           )
         ) {
           this.enemies.takeDamage(e, 1);
           this.bullets.consumeBulletAt(bi);
+
           hit = true;
           break;
         }
@@ -147,29 +204,65 @@ export class RunScene {
 
     // -----------------------------
     // Enemy -> Player collisions
-    // Temporary response: reset player
     // -----------------------------
     for (const e of this.enemies.enemies) {
       if (
         circlesOverlap(
-          p.pos.x, p.pos.y, p.size / 2,
-          e.pos.x, e.pos.y, e.radius
+          p.pos.x,
+          p.pos.y,
+          p.size / 2,
+          e.pos.x,
+          e.pos.y,
+          e.radius
         )
       ) {
-        p.pos.x = canvas.width / 2;
-        p.pos.y = canvas.height / 2;
-        p.vel.x = 0;
-        p.vel.y = 0;
+        // Only take damage if not in invulnerability window.
+        if (p.invulnTime <= 0) {
+          p.hp -= 1;
+          p.invulnTime = p.invulnDuration;
+
+          // Knock player away from the enemy.
+          // Important:
+          // normalize() gives only direction; knockStrength gives magnitude.
+          const knockDir = p.pos.clone().sub(e.pos).normalize();
+          const knockStrength = 280;
+          p.vel.add(knockDir.scale(knockStrength));
+        }
+
         break;
       }
     }
 
     // -----------------------------
-    // Room clear detection
-    // Room clears only when:
-    // 1) all enemies have been spawned
-    // 2) all enemies are dead
+    // Player death / run reset
     // -----------------------------
+    if (p.hp <= 0) {
+      // Reset player state
+      p.hp = p.maxHp;
+      p.pos.set(canvas.width / 2, canvas.height / 2);
+      p.vel.set(0, 0);
+      p.invulnTime = 0;
+      p.cooldown = 0;
+
+      // Reset room state
+      this.roomNumber = 1;
+      this.enemiesToSpawn = this.roomNumber * 4;
+      this.enemiesSpawned = 0;
+      this.spawnTimer = 0;
+      this.roomClear = false;
+      this.roomClearTimer = 0;
+
+      // Clear active combat entities
+      this.enemies.enemies = [];
+      this.bullets.bullets = [];
+    }
+
+    // -----------------------------
+    // Room clear detection
+    // -----------------------------
+    // A room is only clear when:
+    // 1) all enemies for the room have been spawned
+    // 2) no enemies remain alive
     if (
       !this.roomClear &&
       this.enemiesSpawned >= this.enemiesToSpawn &&
@@ -180,68 +273,90 @@ export class RunScene {
     }
 
     // -----------------------------
-    // Room transition countdown
+    // Room transition
     // -----------------------------
     if (this.roomClear) {
       this.roomClearTimer -= dt;
 
       if (this.roomClearTimer <= 0) {
         this.roomNumber++;
+
+        // Basic difficulty scaling:
+        // more enemies each room
         this.enemiesToSpawn = this.roomNumber * 4;
         this.enemiesSpawned = 0;
+
         this.roomClear = false;
+        this.roomClearTimer = 0;
         this.spawnTimer = 0;
       }
     }
   }
 
+  /**
+   * Main per-frame render.
+   *
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {HTMLCanvasElement} canvas
+   */
   render(ctx, canvas) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    // -----------------------------
     // Background
+    // -----------------------------
     ctx.fillStyle = "#111";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Enemies
+    // -----------------------------
+    // Enemies + bullets
+    // -----------------------------
     this.enemies.render(ctx);
-
-    // Bullets
     this.bullets.render(ctx);
 
+    // -----------------------------
     // Player
+    // -----------------------------
     const p = this.player;
-    ctx.fillStyle = "red";
-    ctx.fillRect(
-      p.pos.x - p.size / 2,
-      p.pos.y - p.size / 2,
-      p.size,
-      p.size
-    );
 
+    // Flash while invulnerable for feedback
+    const flashing =
+      p.invulnTime > 0 && Math.floor(p.invulnTime * 12) % 2 === 0;
+
+    ctx.fillStyle = flashing ? "#ffaaaa" : "#ff4444";
+    ctx.beginPath();
+    ctx.arc(p.pos.x, p.pos.y, p.size / 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // -----------------------------
     // Aim line
+    // -----------------------------
     const aimLen = p.size * 1.2;
     const ax = p.pos.x + Math.cos(p.aimAngle) * aimLen;
     const ay = p.pos.y + Math.sin(p.aimAngle) * aimLen;
 
-    ctx.strokeStyle = "yellow";
+    ctx.strokeStyle = "#ffe066";
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(p.pos.x, p.pos.y);
     ctx.lineTo(ax, ay);
     ctx.stroke();
 
-    // Debug: mouse dot
+    // -----------------------------
+    // Debug mouse dot
+    // -----------------------------
     ctx.fillStyle = "white";
     ctx.fillRect(input.mouse.x - 2, input.mouse.y - 2, 4, 4);
 
     // -----------------------------
-    // UI / Room debug text
+    // HUD / debug info
     // -----------------------------
     ctx.fillStyle = "white";
     ctx.font = "20px Arial";
     ctx.fillText(`Room: ${this.roomNumber}`, 20, 30);
     ctx.fillText(`To Spawn: ${this.enemiesToSpawn - this.enemiesSpawned}`, 20, 55);
     ctx.fillText(`Alive: ${this.enemies.enemies.length}`, 20, 80);
+    ctx.fillText(`HP: ${p.hp}/${p.maxHp}`, 20, 105);
 
     if (this.roomClear) {
       ctx.fillStyle = "lime";

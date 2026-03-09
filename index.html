@@ -1,13 +1,31 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Rift Arena</title>
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-  <canvas id="game"></canvas>
-  <script type="module" src="src/js/main.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rift Arena</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <h1>Rift Arena</h1>
+        <p class="subtitle">Arena shooter roguelite prototype</p>
+      </header>
+
+      <section class="game-panel">
+        <canvas id="game"></canvas>
+      </section>
+
+      <section class="info-panel">
+        <h2>Controls</h2>
+        <p><strong>Move:</strong> WASD</p>
+        <p><strong>Aim:</strong> Mouse</p>
+        <p><strong>Shoot:</strong> Left Click</p>
+        <p class="build-note">Current build: movement, aiming, bullets, seekers, room loop</p>
+      </section>
+    </main>
+
+    <script type="module" src="src/js/main.js"></script>
+  </body>
 </html>
